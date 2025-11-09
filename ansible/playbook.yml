@@ -2,6 +2,7 @@
 - name: Configurar VM Ubuntu e rodar container NGINX
   hosts: all
   become: yes
+  become_method: sudo
 
   vars:
     docker_image: "{{ lookup('env', 'DOCKER_IMAGE') | default('nginx:latest', true) }}"
@@ -11,7 +12,7 @@
       apt:
         update_cache: yes
 
-    - name: Instalar dependências básicas
+    - name: Instalar dependências para o Docker
       apt:
         name:
           - ca-certificates
@@ -19,18 +20,22 @@
           - gnupg
           - lsb-release
         state: present
+        update_cache: yes
 
-    - name: Adicionar chave GPG da Docker
-      ansible.builtin.command: >
-        bash -c "install -m 0755 -d /etc/apt/keyrings &&
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg |
-        gpg --dearmor -o /etc/apt/keyrings/docker.gpg"
+    - name: Adicionar chave GPG da Docker (idempotente)
+      shell: |
+        install -m 0755 -d /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+      args:
+        executable: /bin/bash
 
     - name: Adicionar repositório oficial da Docker
-      ansible.builtin.shell: >
-        echo 'deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg]
-        https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable' |
-        tee /etc/apt/sources.list.d/docker.list
+      shell: |
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+        https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | \
+        tee /etc/apt/sources.list.d/docker.list > /dev/null
+      args:
+        executable: /bin/bash
 
     - name: Instalar Docker Engine e ferramentas
       apt:
@@ -49,16 +54,14 @@
         state: started
         enabled: yes
 
-    - name: Remover container NGINX antigo (se existir)
-      ansible.builtin.shell: |
-        docker rm -f webapp || true
+    - name: Remover container antigo (se existir)
+      shell: docker rm -f webapp || true
 
-    - name: Rodar novo container NGINX com a aplicação
-      ansible.builtin.shell: |
-        docker run -d -p 80:80 --name webapp {{ docker_image }}
+    - name: Executar container NGINX com a aplicação
+      shell: docker run -d -p 80:80 --name webapp {{ docker_image }}
 
-    - name: Exibir containers em execução
-      ansible.builtin.shell: docker ps
+    - name: Mostrar containers em execução
+      shell: docker ps
       register: docker_status
 
     - debug:
