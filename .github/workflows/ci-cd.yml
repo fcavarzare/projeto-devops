@@ -2,18 +2,22 @@ name: Azure VM Free - Terraform + Docker + Ansible
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
 
 jobs:
   terraform:
-    name: Terraform (criar RG, rede, VM)
+    name: Terraform - Create Azure Infra
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Setup Terraform
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
-        with: { terraform_version: 1.6.6 }
+        with:
+          terraform_version: 1.6.6
 
       - name: Azure Login
         uses: azure/login@v2
@@ -24,29 +28,28 @@ jobs:
         run: terraform init
 
       - name: Terraform Apply
-        env:
-          TF_VAR_location:        ${{ secrets.AZURE_LOCATION }}
-          TF_VAR_resource_group:  ${{ secrets.RESOURCE_GROUP }}
-          TF_VAR_vm_name:         ${{ secrets.VM_NAME }}
-          TF_VAR_admin_username:  ${{ secrets.ADMIN_USERNAME }}
-          TF_VAR_ssh_public_key:  ${{ secrets.SSH_PUBLIC_KEY }}
         run: terraform apply -auto-approve
+        env:
+          TF_VAR_location: ${{ secrets.AZURE_LOCATION }}
+          TF_VAR_resource_group: ${{ secrets.RESOURCE_GROUP }}
+          TF_VAR_vm_name: ${{ secrets.VM_NAME }}
+          TF_VAR_admin_username: ${{ secrets.ADMIN_USERNAME }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
 
-      - name: Obter IP público da VM
-        id: getip
+      # Captura o IP público da VM e salva como variável global
+      - name: Get public IP from Terraform output
+        id: tf_output
         run: |
-          IP=$(az network public-ip show \
-               -g "${{ secrets.RESOURCE_GROUP }}" \
-               -n "pip-${{ secrets.VM_NAME }}" \
-               --query "ipAddress" -o tsv)
-          echo "ip=$IP" >> $GITHUB_OUTPUT
+          echo "PUBLIC_IP=$(terraform output -raw public_ip)" >> $GITHUB_ENV
 
   docker_build_push:
-    name: Build & Push (Docker Hub)
+    name: Docker Build & Push
     runs-on: ubuntu-latest
     needs: terraform
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Docker Login
         uses: docker/login-action@v3
@@ -54,41 +57,49 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build image (app JS + NGINX)
+      - name: Build Docker image
         run: docker build -t ${{ secrets.DOCKER_IMAGE }} .
 
-      - name: Push image
+      - name: Push Docker image
         run: docker push ${{ secrets.DOCKER_IMAGE }}
 
   ansible_deploy:
-    name: Ansible (configurar VM e rodar container)
+    name: Ansible Deploy (NGINX container)
     runs-on: ubuntu-latest
-    needs: [terraform, docker_build_push]
+    needs: docker_build_push
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Instalar Ansible e coleção Docker
+      - name: Install Ansible
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ansible python3-pip
-          ansible-galaxy collection install community.docker
+          sudo apt update -y
+          sudo apt install -y ansible
 
-      - name: Criar inventário dinâmico com IP da VM
+      # Cria inventário dinâmico com o IP capturado
+      - name: Create Ansible inventory
         run: |
-          echo "[web]" > inventory.ini
-          echo "${{ needs.terraform.outputs.getip.ip || 'IP_NAO_ENCONTRADO' }} ansible_user=${{ secrets.ADMIN_USERNAME }}" >> inventory.ini
-        shell: bash
+          echo "${{ env.PUBLIC_IP }}" > inventory.ini
+          echo "Inventory gerado com IP:"
+          cat inventory.ini
 
-      - name: Preparar chave privada SSH
+      # Adiciona chave privada para autenticação SSH
+      - name: Add SSH key
         run: |
-          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > /tmp/private.key
-          chmod 600 /tmp/private.key
+          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > private_key.pem
+          chmod 600 private_key.pem
 
-      - name: Executar playbook
+      - name: Run Ansible Playbook
         env:
-          ANSIBLE_HOST_KEY_CHECKING: 'False'
+          ANSIBLE_HOST_KEY_CHECKING: "False"
         run: |
           ansible-playbook -i inventory.ini ansible/playbook.yml \
-            --private-key /tmp/private.key \
-            -e "docker_image=${{ secrets.DOCKER_IMAGE }}"
+            --private-key private_key.pem \
+            -u ${{ secrets.ADMIN_USERNAME }}
+
+      # Exibe o IP público no final
+      - name: Show public IP
+        run: |
+          echo "Aplicação disponível em: http://${{ env.PUBLIC_IP }}"
 
