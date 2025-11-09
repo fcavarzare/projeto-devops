@@ -1,0 +1,70 @@
+name: Deploy Docker + Ansible (sem Terraform)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  docker_build_push:
+    name: Docker Build & Push
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Docker Login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build Docker image
+        run: docker build -t ${{ secrets.DOCKER_IMAGE }} .
+
+      - name: Push Docker image
+        run: docker push ${{ secrets.DOCKER_IMAGE }}
+
+  ansible_deploy:
+    name: Ansible Deploy (NGINX container)
+    runs-on: ubuntu-latest
+    needs: docker_build_push
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Ansible
+        run: |
+          sudo apt update -y
+          sudo apt install -y ansible
+
+      # usa o IP salvo nos Secrets
+      - name: Create Ansible inventory
+        run: |
+          echo "${{ secrets.VM_PUBLIC_IP }}" > inventory.ini
+          echo "Inventory gerado com IP:"
+          cat inventory.ini
+
+      # adiciona a chave privada SSH para conectar na VM
+      - name: Add SSH key
+        run: |
+          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > private_key.pem
+          chmod 600 private_key.pem
+
+      - name: Run Ansible Playbook (com sudo)
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "False"
+          DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
+        run: |
+          ansible-playbook -i inventory.ini ansible/playbook.yml \
+            --private-key private_key.pem \
+            -u ${{ secrets.ADMIN_USERNAME }} \
+            --become \
+            --become-method=sudo
+
+      - name: Show public IP
+        run: |
+          echo "Aplicação disponível em: http://${{ secrets.VM_PUBLIC_IP }}"
+
