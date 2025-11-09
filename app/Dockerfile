@@ -1,15 +1,17 @@
-# Imagem base do NGINX
-FROM nginx:latest
+FROM nginx:alpine
 
-# Remove o conteúdo padrão do NGINX
-RUN rm -rf /usr/share/nginx/html/*
+# Define o diretório de trabalho padrão do NGINX
+WORKDIR /usr/share/nginx/html
 
-# Copia os arquivos da sua aplicação
-COPY ./ /usr/share/nginx/html
+# Remove os arquivos padrão do NGINX
+RUN rm -rf ./*
 
-# Expõe a porta 80
+# Copia os arquivos do seu site para dentro do container
+COPY site/ .
+
+# Expõe a porta padrão do NGINX
 EXPOSE 80
 
-# Comando padrão do NGINX
+# Inicia o NGINX
 CMD ["nginx", "-g", "daemon off;"]
 
