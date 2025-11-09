@@ -2,7 +2,7 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 3.100"
+      version = "~> 3.117"
     }
   }
   required_version = ">= 1.6.0"
@@ -38,10 +38,14 @@ resource "azurerm_subnet" "subnet" {
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = ["10.0.1.0/24"]
+
+  depends_on = [
+    azurerm_virtual_network.vnet
+  ]
 }
 
 ############################
-# Public IP (Basic, Dynamic)
+# Public IP (Standard Static)
 ############################
 resource "azurerm_public_ip" "pip" {
   name                = "pip-${var.vm_name}"
@@ -60,26 +64,26 @@ resource "azurerm_network_security_group" "nsg" {
   location            = var.location
   resource_group_name = azurerm_resource_group.rg.name
 
-  # SSH 22
+  # SSH
   security_rule {
-    name                        = "allow_ssh"
-    priority                    = 1001
-    direction                   = "Inbound"
-    access                      = "Allow"
-    protocol                    = "Tcp"
+    name                       = "allow_ssh"
+    priority                   = 1001
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
     source_port_range           = "*"
     destination_port_range      = "22"
     source_address_prefix       = "*"
     destination_address_prefix  = "*"
   }
 
-  # HTTP 80
+  # HTTP
   security_rule {
-    name                        = "allow_http"
-    priority                    = 1002
-    direction                   = "Inbound"
-    access                      = "Allow"
-    protocol                    = "Tcp"
+    name                       = "allow_http"
+    priority                   = 1002
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
     source_port_range           = "*"
     destination_port_range      = "80"
     source_address_prefix       = "*"
@@ -112,7 +116,7 @@ resource "azurerm_network_interface_security_group_association" "nsg_assoc" {
 }
 
 ############################
-# Linux VM (Ubuntu 22.04 LTS)
+# Linux VM (Ubuntu 24.04 LTS - Free Tier)
 ############################
 resource "azurerm_linux_virtual_machine" "vm" {
   name                = var.vm_name
