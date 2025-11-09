@@ -52,4 +52,87 @@ jobs:
         id: tf_output
         run: |
           PUBLIC_IP=$(terraform output -raw public_ip)
+          echo "public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+        working-directory: ./terraform
+
+  ansible_install_docker:
+    name: Ansible - Instalar Docker na VM
+    runs-on: ubuntu-latest
+    needs: terraform
+    env:
+      PUBLIC_IP: ${{ needs.terraform.outputs.public_ip }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Instalar Ansible
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ansible
+
+      - name: Configurar SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H $PUBLIC_IP >> ~/.ssh/known_hosts
+
+      - name: Rodar playbook para instalar Docker
+        run: |
+          ansible-playbook -i "$PUBLIC_IP," ansible/install_docker.yml \
+            -u ${{ secrets.ADMIN_USERNAME }} \
+            --private-key ~/.ssh/id_rsa \
+            -e "ansible_python_interpreter=/usr/bin/python3"
+
+  docker_build_push:
+    name: Docker Build & Push
+    runs-on: ubuntu-latest
+    needs: ansible_install_docker
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Docker Login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build Docker image
+        run: docker build -t ${{ secrets.DOCKER_IMAGE }} ./app
+
+      - name: Push Docker image
+        run: docker push ${{ secrets.DOCKER_IMAGE }}
+
+  deploy_container:
+    name: Deploy Docker Container via SSH
+    runs-on: ubuntu-latest
+    needs: docker_build_push
+    env:
+      PUBLIC_IP: ${{ needs.terraform.outputs.public_ip }}
+
+    steps:
+      - name: Configurar chave SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H $PUBLIC_IP >> ~/.ssh/known_hosts
+
+      - name: Deploy na VM (executar container)
+        run: |
+          ssh ${{ secrets.ADMIN_USERNAME }}@$PUBLIC_IP << 'EOF'
+          sudo docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}"
+          sudo docker pull ${{ secrets.DOCKER_IMAGE }}:latest
+          sudo docker stop meuapp-nginx || true
+          sudo docker rm meuapp-nginx || true
+          sudo docker run -d --name meuapp-nginx -p 80:80 --restart=always ${{ secrets.DOCKER_IMAGE }}:latest
+          sudo docker ps
+          EOF
+
+      - name: Exibir URL de acesso
+        run: |
+          echo "🌐 Aplicação disponível em: http://$PUBLIC_IP"
 
