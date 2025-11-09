@@ -1,4 +1,4 @@
-name: Deploy Docker + Ansible (sem Terraform)
+name: Docker + Ansible Deploy to Azure VM
 
 on:
   push:
@@ -40,20 +40,18 @@ jobs:
           sudo apt update -y
           sudo apt install -y ansible
 
-      # usa o IP salvo nos Secrets
       - name: Create Ansible inventory
         run: |
           echo "${{ secrets.VM_PUBLIC_IP }}" > inventory.ini
-          echo "Inventory gerado com IP:"
+          echo "Inventory generated with IP:"
           cat inventory.ini
 
-      # adiciona a chave privada SSH para conectar na VM
       - name: Add SSH key
         run: |
           echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > private_key.pem
           chmod 600 private_key.pem
 
-      - name: Run Ansible Playbook (com sudo)
+      - name: Run Ansible Playbook
         env:
           ANSIBLE_HOST_KEY_CHECKING: "False"
           DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
@@ -66,5 +64,5 @@ jobs:
 
       - name: Show public IP
         run: |
-          echo "Aplicação disponível em: http://${{ secrets.VM_PUBLIC_IP }}"
+          echo "Application available at: http://${{ secrets.VM_PUBLIC_IP }}"
 
