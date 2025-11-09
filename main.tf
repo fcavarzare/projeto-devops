@@ -45,7 +45,7 @@ resource "azurerm_subnet" "subnet" {
 }
 
 ############################
-# Public IP (Standard Static)
+# Public IP (Standard + Static)
 ############################
 resource "azurerm_public_ip" "pip" {
   name                = "pip-${var.vm_name}"
@@ -64,7 +64,7 @@ resource "azurerm_network_security_group" "nsg" {
   location            = var.location
   resource_group_name = azurerm_resource_group.rg.name
 
-  # SSH
+  # SSH 22
   security_rule {
     name                       = "allow_ssh"
     priority                   = 1001
@@ -77,7 +77,7 @@ resource "azurerm_network_security_group" "nsg" {
     destination_address_prefix  = "*"
   }
 
-  # HTTP
+  # HTTP 80
   security_rule {
     name                       = "allow_http"
     priority                   = 1002
@@ -116,13 +116,13 @@ resource "azurerm_network_interface_security_group_association" "nsg_assoc" {
 }
 
 ############################
-# Linux VM (Ubuntu 24.04 LTS - Free Tier)
+# Linux Virtual Machine (Ubuntu 22.04 LTS – Free Tier)
 ############################
 resource "azurerm_linux_virtual_machine" "vm" {
   name                = var.vm_name
   resource_group_name = azurerm_resource_group.rg.name
   location            = var.location
-  size                = "Standard_B1s"
+  size                = "Standard_B1s"                   # Free Tier
   admin_username      = var.admin_username
   network_interface_ids = [azurerm_network_interface.nic.id]
 
@@ -136,11 +136,11 @@ resource "azurerm_linux_virtual_machine" "vm" {
     storage_account_type = "Standard_LRS"
   }
 
-  # Ubuntu 24.04 LTS (x64 Gen2)
+  # Ubuntu 22.04 LTS (x64 Gen2) – estável e disponível em todas as regiões
   source_image_reference {
     publisher = "Canonical"
-    offer     = "0001-com-ubuntu-server-noble"
-    sku       = "24_04-lts"
+    offer     = "0001-com-ubuntu-server-jammy"
+    sku       = "22_04-lts-gen2"
     version   = "latest"
   }
 
