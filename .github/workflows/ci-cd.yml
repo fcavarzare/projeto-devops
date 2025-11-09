@@ -1,9 +1,14 @@
-name: Docker + Ansible Deploy to Azure VM
+name: CI/CD - Build e Deploy Automático (Docker + Azure VM)
 
 on:
   push:
     branches:
       - main
+    paths:
+      - '**.html'
+      - '**.css'
+      - '**.js'
+      - 'Dockerfile'
 
 jobs:
   docker_build_push:
@@ -14,56 +19,37 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Docker Login
+      - name: Login no Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build Docker image
-        run: docker build -t ${{ secrets.DOCKER_IMAGE }} .
+      - name: Build e Push da imagem
+        run: |
+          docker build -t ${{ secrets.DOCKER_IMAGE }} .
+          docker push ${{ secrets.DOCKER_IMAGE }}
 
-      - name: Push Docker image
-        run: docker push ${{ secrets.DOCKER_IMAGE }}
-
-  ansible_deploy:
-    name: Ansible Deploy (NGINX container)
+  deploy_vm:
+    name: Deploy Automático na VM Azure
     runs-on: ubuntu-latest
     needs: docker_build_push
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Ansible
-        run: |
-          sudo apt update -y
-          sudo apt install -y ansible
-
-      - name: Create Ansible inventory
-        run: |
-          echo "[all]" > inventory.ini
-          echo "${{ secrets.VM_PUBLIC_IP }}" > inventory.ini
-          echo "Inventory generated with IP:"
-          cat inventory.ini
-
-      - name: Add SSH key
+      - name: Adicionar chave privada SSH
         run: |
           echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > private_key.pem
           chmod 600 private_key.pem
 
-      - name: Run Ansible Playbook
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
+      - name: Conectar na VM e atualizar container
         run: |
-          ansible-playbook -i inventory.ini ansible/playbook.yml \
-            --private-key private_key.pem \
-            -u ${{ secrets.ADMIN_USERNAME }} \
-            --become \
-            --become-method=sudo
+          ssh -i private_key.pem -o StrictHostKeyChecking=no ${{ secrets.ADMIN_USERNAME }}@${{ secrets.VM_PUBLIC_IP }} << 'EOF'
+            sudo docker pull ${{ secrets.DOCKER_IMAGE }}
+            sudo docker rm -f webapp || true
+            sudo docker run -d -p 80:80 --name webapp ${{ secrets.DOCKER_IMAGE }}
+            sudo docker ps
+          EOF
 
-      - name: Show public IP
-        run: |
-          echo "Application available at: http://${{ secrets.VM_PUBLIC_IP }}"
+      - name: Mostrar URL de acesso
+        run: echo "✅ Aplicação disponível em: http://${{ secrets.VM_PUBLIC_IP }}"
 
