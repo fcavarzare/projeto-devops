@@ -1,88 +1,64 @@
-name: CI/CD - Terraform + Docker + Azure VM
+name: Docker Deploy to Azure VM
 
 on:
   push:
-    branches: [ main ]
-    paths:
-      - '**.tf'
-      - 'src/**'
-      - 'Dockerfile'
+    branches:
+      - main
 
 jobs:
-  terraform:
-    name: Criar infraestrutura no Azure
+  docker_build_push:
+    name: Docker Build & Push
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout do repositório
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Instalar Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.9.5
-
-      - name: Login no Azure
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Inicializar e aplicar Terraform
-        run: |
-          terraform init
-          terraform apply -auto-approve \
-            -var "location=${{ secrets.AZURE_LOCATION }}" \
-            -var "resource_group=${{ secrets.AZURE_RG }}" \
-            -var "vm_name=${{ secrets.AZURE_VM_NAME }}" \
-            -var "admin_username=${{ secrets.ADMIN_USERNAME }}" \
-            -var "ssh_public_key=${{ secrets.SSH_PUBLIC_KEY }}"
-
-      - name: Salvar IP público como variável
-        id: output
-        run: echo "VM_IP=$(terraform output -raw public_ip)" >> $GITHUB_ENV
-
-  docker:
-    name: Build e Push da imagem Docker
-    runs-on: ubuntu-latest
-    needs: terraform
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Login no Docker Hub
+      - name: Docker Login
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build e Push da imagem
-        run: |
-          docker build -t ${{ secrets.DOCKER_IMAGE }} .
-          docker push ${{ secrets.DOCKER_IMAGE }}
+      - name: Build Docker image
+        run: docker build -t ${{ secrets.DOCKER_IMAGE }} .
 
-  deploy:
-    name: Deploy na VM criada
+      - name: Push Docker image
+        run: docker push ${{ secrets.DOCKER_IMAGE }}
+
+  docker_deploy:
+    name: Docker Deploy on Azure VM
     runs-on: ubuntu-latest
-    needs: docker
+    needs: docker_build_push
+
     steps:
-      - name: Criar chave SSH
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Add SSH key
         run: |
           echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > private_key.pem
           chmod 600 private_key.pem
 
-      - name: Fazer deploy do container na VM
+      - name: Connect to VM and deploy container
         env:
+          VM_IP: ${{ secrets.VM_PUBLIC_IP }}
           ADMIN_USER: ${{ secrets.ADMIN_USERNAME }}
           DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
         run: |
-          VM_IP="${{ env.VM_IP }}"
-          ssh -i private_key.pem -o StrictHostKeyChecking=no "$ADMIN_USER@$VM_IP" << 'EOF'
-            sudo apt update -y
-            sudo apt install -y docker.io
-            sudo docker pull $DOCKER_IMAGE
-            sudo docker rm -f webapp || true
-            sudo docker run -d -p 80:80 --name webapp $DOCKER_IMAGE
+          ssh -i private_key.pem -o StrictHostKeyChecking=no $ADMIN_USER@$VM_IP "
+            echo '🚀 Atualizando container...'
+            sudo apt update -y &&
+            sudo apt install -y docker.io &&
+            sudo systemctl enable docker &&
+            sudo systemctl start docker &&
+            sudo docker pull $DOCKER_IMAGE &&
+            sudo docker rm -f webapp || true &&
+            sudo docker run -d -p 80:80 --name webapp $DOCKER_IMAGE &&
             sudo docker ps
-          EOF
+          "
 
-      - name: Exibir URL de acesso
-        run: echo "✅ Aplicação disponível em: http://${{ env.VM_IP }}"
+      - name: Show public IP
+        run: |
+          echo "✅ Application available at: http://${{ secrets.VM_PUBLIC_IP }}"
 
