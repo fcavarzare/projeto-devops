@@ -27,14 +27,18 @@ jobs:
       - name: Terraform Init
         run: terraform init
 
-      - name: Terraform Apply
-        run: terraform apply -auto-approve
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan
         env:
           TF_VAR_location: ${{ secrets.AZURE_LOCATION }}
           TF_VAR_resource_group: ${{ secrets.RESOURCE_GROUP }}
           TF_VAR_vm_name: ${{ secrets.VM_NAME }}
           TF_VAR_admin_username: ${{ secrets.ADMIN_USERNAME }}
           TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+
+      - name: Terraform Apply (only if changes)
+        run: |
+          terraform show tfplan | grep "No changes." && echo "✅ Infra já está atualizada. Pulando apply." || terraform apply -auto-approve tfplan
 
       # Captura o IP público da VM e salva como variável global
       - name: Get public IP from Terraform output
