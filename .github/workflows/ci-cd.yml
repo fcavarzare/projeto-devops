@@ -42,6 +42,7 @@ jobs:
 
       - name: Create Ansible inventory
         run: |
+          echo "[all]" > inventory.ini
           echo "${{ secrets.VM_PUBLIC_IP }}" > inventory.ini
           echo "Inventory generated with IP:"
           cat inventory.ini
