@@ -1,4 +1,4 @@
-name: Azure VM Free - Terraform + Ansible + Docker + Deploy SSH
+name: Azure VM Free - Terraform + Ansible + Docker + Deploy
 
 on:
   push:
@@ -53,14 +53,17 @@ jobs:
         run: |
           PUBLIC_IP=$(terraform output -raw public_ip)
           echo "public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+          echo "📡 IP público detectado: $PUBLIC_IP"
         working-directory: ./terraform
 
   ansible_install_docker:
-    name: Ansible - Instalar Docker na VM
+    name: Ansible - Instalar Docker e Deployar Container
     runs-on: ubuntu-latest
     needs: terraform
     env:
-      PUBLIC_IP: ${{ needs.terraform.outputs.public_ip }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
 
     steps:
       - name: Checkout repository
@@ -71,73 +74,23 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y ansible
 
-      - name: Configurar SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H $PUBLIC_IP >> ~/.ssh/known_hosts
+      # 👇 Passa o IP do Terraform para os próximos steps
+      - name: Definir variável PUBLIC_IP
+        run: echo "PUBLIC_IP=${{ needs.terraform.outputs.public_ip }}" >> $GITHUB_ENV
 
-      - name: Rodar playbook para instalar Docker
-        run: |
-          ansible-playbook -i "$PUBLIC_IP," ansible/install_docker.yml \
-            -u ${{ secrets.ADMIN_USERNAME }} \
-            --private-key ~/.ssh/id_rsa \
-            -e "ansible_python_interpreter=/usr/bin/python3"
-
-  docker_build_push:
-    name: Docker Build & Push
-    runs-on: ubuntu-latest
-    needs: ansible_install_docker
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Docker Login
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build Docker image
-        run: docker build -t ${{ secrets.DOCKER_IMAGE }} ./app
-
-      - name: Push Docker image
-        run: docker push ${{ secrets.DOCKER_IMAGE }}
-
-  deploy_container:
-    name: Deploy Docker Container via SSH
-    runs-on: ubuntu-latest
-    needs: docker_build_push
-    env:
-      PUBLIC_IP: ${{ needs.terraform.outputs.public_ip }}
-
-    steps:
       - name: Configurar SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           echo "📡 IP público detectado: $PUBLIC_IP"
-          if [ -z "$PUBLIC_IP" ]; then
-            echo "❌ ERRO: variável PUBLIC_IP está vazia!"
-            exit 1
-          fi
           ssh-keyscan -H $PUBLIC_IP >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Deploy na VM (executar container)
+      - name: Rodar playbook Ansible (instalar Docker e rodar container)
         run: |
-          ssh ${{ secrets.ADMIN_USERNAME }}@$PUBLIC_IP << 'EOF'
-          sudo docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}"
-          sudo docker pull ${{ secrets.DOCKER_IMAGE }}:latest
-          sudo docker stop meuapp-nginx || true
-          sudo docker rm meuapp-nginx || true
-          sudo docker run -d --name meuapp-nginx -p 80:80 --restart=always ${{ secrets.DOCKER_IMAGE }}:latest
-          sudo docker ps
-          EOF
-
-      - name: Exibir URL de acesso
-        run: |
-          echo "🌐 Aplicação disponível em: http://$PUBLIC_IP"
+          ansible-playbook -i "$PUBLIC_IP," ansible/install_docker.yml \
+            -u ${{ secrets.ADMIN_USERNAME }} \
+            --private-key ~/.ssh/id_rsa \
+            -e DOCKER_IMAGE='${{ secrets.DOCKER_IMAGE }}' \
+            -e DOCKERHUB_USERNAME='${{ secrets.DOCKERHUB_USERNAME }}' \
 
