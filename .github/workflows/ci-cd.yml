@@ -1,4 +1,4 @@
-name: Instalar Ansible na VM e Deployar Container
+name: Instalar Ansible e subir container via SSH
 
 on:
   push:
@@ -7,14 +7,15 @@ on:
 
 jobs:
   deploy:
-    name: Instalar Ansible e rodar container
+    name: Instalar Ansible + Docker Run na VM
     runs-on: ubuntu-latest
+
     env:
       PUBLIC_IP: ${{ secrets.VM_PUBLIC_IP }}
       ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
+      DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-      DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
 
     steps:
       - name: Checkout repository
@@ -25,17 +26,33 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          echo "📡 Conectando na VM $PUBLIC_IP"
           ssh-keyscan -H $PUBLIC_IP >> ~/.ssh/known_hosts 2>/dev/null
+          echo "✅ Conexão SSH configurada para $PUBLIC_IP"
 
-      - name: Instalar Ansible na VM e rodar container
+      - name: Instalar Ansible e rodar container na VM
         run: |
           ssh -o StrictHostKeyChecking=no $ADMIN_USERNAME@$PUBLIC_IP << 'EOF'
           set -e
+
           echo "🚀 Atualizando pacotes e instalando Ansible..."
           sudo apt-get update -y
           sudo apt-get install -y ansible docker.io
 
           echo "🐋 Fazendo login no Docker Hub..."
-          echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker_
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+          echo "⬇️ Puxando imagem do Docker Hub..."
+          sudo docker pull "${{ secrets.DOCKER_IMAGE }}:latest"
+
+          echo "🧹 Parando container antigo (se existir)..."
+          sudo docker stop meuapp-nginx || true
+          sudo docker rm meuapp-nginx || true
+
+          echo "🚀 Subindo container atualizado..."
+          sudo docker run -d --name meuapp-nginx \
+            -p 80:80 --restart=always "${{ secrets.DOCKER_IMAGE }}:latest"
+
+          echo "✅ Containers em execução:"
+          sudo docker ps
+          EOF
 
