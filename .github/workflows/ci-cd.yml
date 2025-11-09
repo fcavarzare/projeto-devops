@@ -1,16 +1,18 @@
-name: Azure VM Free - Terraform + Ansible + Docker + Deploy
+name: Ansible + Docker Deploy (sem Terraform)
 
 on:
   push:
     branches:
       - main
-#######
+
 jobs:
-  ansible_install_docker:
-    name: Ansible - Instalar Docker e Deployar Container
+  ansible_deploy:
+    name: Ansible - Deployar Container na VM existente
     runs-on: ubuntu-latest
-    needs: terraform
+
     env:
+      PUBLIC_IP: ${{ secrets.VM_PUBLIC_IP }}
+      ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
       DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
@@ -24,45 +26,21 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y ansible
 
-      - name: Definir variável PUBLIC_IP
-        run: echo "PUBLIC_IP=${{ needs.terraform.outputs.public_ip }}" >> $GITHUB_ENV
-
       - name: Configurar SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          echo "📡 IP público detectado: $PUBLIC_IP"
+          echo "📡 Conectando na VM $PUBLIC_IP"
           ssh-keyscan -H $PUBLIC_IP >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Rodar playbook Ansible (instalar Docker e rodar container)
+      - name: Executar playbook Ansible (deploy container)
         run: |
           ansible-playbook -i "$PUBLIC_IP," ansible/install_docker.yml \
-            -u ${{ secrets.ADMIN_USERNAME }} \
+            -u $ADMIN_USERNAME \
             --private-key ~/.ssh/id_rsa \
-            -e DOCKER_IMAGE='${{ secrets.DOCKER_IMAGE }}' \
-            -e DOCKERHUB_USERNAME='${{ secrets.DOCKERHUB_USERNAME }}' \
-            -e DOCKERHUB_TOKEN='${{ secrets.DOCKERHUB_TOKEN }}' \
+            -e DOCKER_IMAGE="$DOCKER_IMAGE" \
+            -e DOCKERHUB_USERNAME="$DOCKERHUB_USERNAME" \
+            -e DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
             -e ansible_python_interpreter=/usr/bin/python3
-
-  docker_build_push:
-    name: Docker Build & Push
-    runs-on: ubuntu-latest
-    needs: ansible_install_docker
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Docker Login
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build Docker image
-        run: docker build -t ${{ secrets.DOCKER_IMAGE }}:latest ./app
-
-      - name: Push Docker image
-        run: docker push ${{ secrets.DOCKER_IMAGE }}:latest
 
