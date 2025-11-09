@@ -1,4 +1,4 @@
-name: Ansible + Docker Deploy (sem Terraform)
+name: Instalar Ansible na VM e Deployar Container
 
 on:
   push:
@@ -6,10 +6,9 @@ on:
       - main
 
 jobs:
-  ansible_deploy:
-    name: Ansible - Deployar Container na VM existente
+  deploy:
+    name: Instalar Ansible e rodar container
     runs-on: ubuntu-latest
-
     env:
       PUBLIC_IP: ${{ secrets.VM_PUBLIC_IP }}
       ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
@@ -21,11 +20,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Instalar Ansible
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ansible
-
       - name: Configurar SSH
         run: |
           mkdir -p ~/.ssh
@@ -34,13 +28,14 @@ jobs:
           echo "📡 Conectando na VM $PUBLIC_IP"
           ssh-keyscan -H $PUBLIC_IP >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Executar playbook Ansible (deploy container)
+      - name: Instalar Ansible na VM e rodar container
         run: |
-          ansible-playbook -i "$PUBLIC_IP," ansible/install_docker.yml \
-            -u $ADMIN_USERNAME \
-            --private-key ~/.ssh/id_rsa \
-            -e DOCKER_IMAGE="$DOCKER_IMAGE" \
-            -e DOCKERHUB_USERNAME="$DOCKERHUB_USERNAME" \
-            -e DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
-            -e ansible_python_interpreter=/usr/bin/python3
+          ssh -o StrictHostKeyChecking=no $ADMIN_USERNAME@$PUBLIC_IP << 'EOF'
+          set -e
+          echo "🚀 Atualizando pacotes e instalando Ansible..."
+          sudo apt-get update -y
+          sudo apt-get install -y ansible docker.io
+
+          echo "🐋 Fazendo login no Docker Hub..."
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker_
 
