@@ -71,7 +71,7 @@
     - debug:
         var: docker_ver.stdout
 
-              - name: Baixar imagem da aplicação no Docker Hub
+    - name: Baixar imagem da aplicação no Docker Hub
       shell: docker pull {{ docker_image }}
 
     - name: Remover container antigo se existir
