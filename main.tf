@@ -47,8 +47,9 @@ resource "azurerm_public_ip" "pip" {
   name                = "pip-${var.vm_name}"
   resource_group_name = azurerm_resource_group.rg.name
   location            = var.location
-  allocation_method   = "Dynamic"
-  sku                 = "Basic"
+  allocation_method   = "Static"
+  sku                 = "Standard"
+  zones               = []
 }
 
 ############################
