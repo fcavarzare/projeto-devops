@@ -1,4 +1,4 @@
-name: Azure VM Free - Terraform + Docker
+name: Azure VM Free - Terraform + Docker + Deploy SSH (Dynamic IP)
 
 on:
   push:
@@ -9,6 +9,9 @@ jobs:
   terraform:
     name: Terraform - Create Azure Infra
     runs-on: ubuntu-latest
+
+    outputs:
+      public_ip: ${{ steps.tf_output.outputs.public_ip }}
 
     steps:
       - name: Checkout repository
@@ -26,9 +29,11 @@ jobs:
 
       - name: Terraform Init
         run: terraform init
+        working-directory: ./terraform
 
       - name: Terraform Plan
         run: terraform plan -out=tfplan
+        working-directory: ./terraform
         env:
           TF_VAR_location: ${{ secrets.AZURE_LOCATION }}
           TF_VAR_resource_group: ${{ secrets.RESOURCE_GROUP }}
@@ -38,13 +43,18 @@ jobs:
 
       - name: Terraform Apply (only if changes)
         run: |
-          terraform show tfplan | grep "No changes." && echo "✅ Infra já está atualizada. Pulando apply." || terraform apply -auto-approve tfplan
+          terraform show tfplan | grep "No changes." && \
+            echo "✅ Infra já está atualizada. Pulando apply." || \
+            terraform apply -auto-approve tfplan
+        working-directory: ./terraform
 
-      # Captura o IP público da VM e salva como variável global
       - name: Get public IP from Terraform output
         id: tf_output
         run: |
-          echo "PUBLIC_IP=$(terraform output -raw public_ip)" >> $GITHUB_ENV
+          PUBLIC_IP=$(terraform output -raw public_ip)
+          echo "Public IP da VM: $PUBLIC_IP"
+          echo "public_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+        working-directory: ./terraform
 
   docker_build_push:
     name: Docker Build & Push
@@ -62,12 +72,38 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build Docker image
-        run: docker build -t ${{ secrets.DOCKER_IMAGE }} .
+        run: docker build -t ${{ secrets.DOCKER_IMAGE }} ./app
 
       - name: Push Docker image
         run: docker push ${{ secrets.DOCKER_IMAGE }}
 
-      - name: Show public IP
+  deploy_container:
+    name: Deploy Docker Container via SSH
+    runs-on: ubuntu-latest
+    needs: [terraform, docker_build_push]
+    env:
+      PUBLIC_IP: ${{ needs.terraform.outputs.public_ip }}
+
+    steps:
+      - name: Configurar chave SSH
         run: |
-          echo "Aplicação disponível em: http://${{ env.PUBLIC_IP }}"
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H $PUBLIC_IP >> ~/.ssh/known_hosts
+
+      - name: Deploy na VM (executar container)
+        run: |
+          ssh ${{ secrets.ADMIN_USERNAME }}@$PUBLIC_IP << 'EOF'
+          sudo docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}"
+          sudo docker pull ${{ secrets.DOCKER_IMAGE }}:latest
+          sudo docker stop meuapp-nginx || true
+          sudo docker rm meuapp-nginx || true
+          sudo docker run -d --name meuapp-nginx -p 80:80 --restart=always ${{ secrets.DOCKER_IMAGE }}:latest
+          sudo docker ps
+          EOF
+
+      - name: Exibir URL de acesso
+        run: |
+          echo "🌐 Aplicação disponível em: http://$PUBLIC_IP"
 
