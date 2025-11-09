@@ -1,18 +1,18 @@
 ---
-- name: Configurar VM Ubuntu e rodar container NGINX
+- name: Instalar Docker e subir container da imagem do Docker Hub
   hosts: all
   become: yes
   become_method: sudo
 
   vars:
-    docker_image: "{{ lookup('env', 'DOCKER_IMAGE') | default('nginx:latest', true) }}"
+    docker_image: "{{ lookup('env', 'DOCKER_IMAGE') | default('fcavarzare/meuapp-nginx:latest', true) }}"
 
   tasks:
-    - name: Atualizar cache de pacotes
+    - name: Atualizar cache do apt
       apt:
         update_cache: yes
 
-    - name: Instalar dependências para o Docker
+    - name: Instalar pacotes necessários
       apt:
         name:
           - ca-certificates
@@ -22,22 +22,32 @@
         state: present
         update_cache: yes
 
-    - name: Adicionar chave GPG da Docker (idempotente)
+    - name: Criar diretório do keyring da Docker
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Adicionar chave GPG da Docker
       shell: |
-        install -m 0755 -d /etc/apt/keyrings
         curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
       args:
         executable: /bin/bash
 
-    - name: Adicionar repositório oficial da Docker
+    - name: Adicionar repositório Docker oficial
       shell: |
-        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-        https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | \
-        tee /etc/apt/sources.list.d/docker.list > /dev/null
+        echo \
+        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+        https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
+        | tee /etc/apt/sources.list.d/docker.list > /dev/null
       args:
         executable: /bin/bash
 
-    - name: Instalar Docker Engine e ferramentas
+    - name: Atualizar novamente o cache do apt
+      apt:
+        update_cache: yes
+
+    - name: Instalar Docker Engine
       apt:
         name:
           - docker-ce
@@ -48,22 +58,16 @@
         state: present
         update_cache: yes
 
-    - name: Garantir que o serviço Docker está ativo
+    - name: Ativar serviço Docker
       service:
         name: docker
         state: started
         enabled: yes
 
-    - name: Remover container antigo (se existir)
-      shell: docker rm -f webapp || true
-
-    - name: Executar container NGINX com a aplicação
-      shell: docker run -d -p 80:80 --name webapp {{ docker_image }}
-
-    - name: Mostrar containers em execução
-      shell: docker ps
-      register: docker_status
+    - name: Mostrar versão do Docker instalada
+      command: docker --version
+      register: docker_ver
 
     - debug:
-        var: docker_status.stdout
+        var: docker_ver.stdout
 
