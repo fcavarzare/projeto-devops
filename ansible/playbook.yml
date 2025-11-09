@@ -3,31 +3,64 @@
   hosts: all
   become: yes
 
+  vars:
+    docker_image: "{{ lookup('env', 'DOCKER_IMAGE') | default('nginx:latest', true) }}"
+
   tasks:
-    - name: Atualizar pacotes
+    - name: Atualizar cache de pacotes
       apt:
         update_cache: yes
-        upgrade: yes
 
-    - name: Instalar Docker e Python dependências
+    - name: Instalar dependências básicas
       apt:
         name:
-          - docker.io
-          - python3-pip
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
         state: present
 
-    - name: Habilitar serviço Docker
+    - name: Adicionar chave GPG da Docker
+      ansible.builtin.command: >
+        bash -c "install -m 0755 -d /etc/apt/keyrings &&
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg |
+        gpg --dearmor -o /etc/apt/keyrings/docker.gpg"
+
+    - name: Adicionar repositório oficial da Docker
+      ansible.builtin.shell: >
+        echo 'deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg]
+        https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable' |
+        tee /etc/apt/sources.list.d/docker.list
+
+    - name: Instalar Docker Engine e ferramentas
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: yes
+
+    - name: Garantir que o serviço Docker está ativo
       service:
         name: docker
         state: started
         enabled: yes
 
-    - name: Subir container NGINX com a imagem do Docker Hub
-      community.docker.docker_container:
-        name: web
-        image: "{{ docker_image }}"
-        state: started
-        restart_policy: always
-        ports:
-          - "80:80"
+    - name: Remover container NGINX antigo (se existir)
+      ansible.builtin.shell: |
+        docker rm -f webapp || true
+
+    - name: Rodar novo container NGINX com a aplicação
+      ansible.builtin.shell: |
+        docker run -d -p 80:80 --name webapp {{ docker_image }}
+
+    - name: Exibir containers em execução
+      ansible.builtin.shell: docker ps
+      register: docker_status
+
+    - debug:
+        var: docker_status.stdout
 
