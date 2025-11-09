@@ -118,11 +118,10 @@ resource "azurerm_linux_virtual_machine" "vm" {
   name                = var.vm_name
   resource_group_name = azurerm_resource_group.rg.name
   location            = var.location
-  size                = "Standard_A1_v2"                # elegível Free Tier
+  size                = "Standard_B1s"
   admin_username      = var.admin_username
   network_interface_ids = [azurerm_network_interface.nic.id]
 
-  # chave pública SSH (passe via TF_VAR_ssh_public_key)
   admin_ssh_key {
     username   = var.admin_username
     public_key = var.ssh_public_key
@@ -133,14 +132,14 @@ resource "azurerm_linux_virtual_machine" "vm" {
     storage_account_type = "Standard_LRS"
   }
 
+  # Ubuntu 24.04 LTS (x64 Gen2)
   source_image_reference {
     publisher = "Canonical"
-    offer     = "0001-com-ubuntu-server-jammy"
-    sku       = "22_04-lts"
+    offer     = "0001-com-ubuntu-server-noble"
+    sku       = "24_04-lts"
     version   = "latest"
   }
 
-  # opcional: tags
   tags = {
     project = "meuapp-nginx"
     env     = "lab-free"
