@@ -114,12 +114,17 @@ jobs:
       PUBLIC_IP: ${{ needs.terraform.outputs.public_ip }}
 
     steps:
-      - name: Configurar chave SSH
+      - name: Configurar SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H $PUBLIC_IP >> ~/.ssh/known_hosts
+          echo "📡 IP público detectado: $PUBLIC_IP"
+          if [ -z "$PUBLIC_IP" ]; then
+            echo "❌ ERRO: variável PUBLIC_IP está vazia!"
+            exit 1
+          fi
+          ssh-keyscan -H $PUBLIC_IP >> ~/.ssh/known_hosts 2>/dev/null
 
       - name: Deploy na VM (executar container)
         run: |
