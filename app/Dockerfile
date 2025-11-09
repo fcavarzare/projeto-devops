@@ -1,18 +1,20 @@
 FROM nginx:alpine
 
-# Diretório padrão do NGINX
+# Cria diretório padrão do NGINX
 WORKDIR /usr/share/nginx/html
 
-# Remove o conteúdo padrão do NGINX
+# Remove arquivos padrões do NGINX
 RUN rm -rf ./*
 
-# Copia os arquivos do seu site
-COPY site/ .
+# Copia diretamente o conteúdo do site para o diretório raiz do NGINX
+# Isso garante que o index.html fique em /usr/share/nginx/html/index.html
+COPY site/index.html ./index.html
+COPY site/js ./js
 
-# Corrige permissões para o usuário nginx
+# Corrige permissões (leitura para todos)
 RUN chmod -R 755 /usr/share/nginx/html
 
-# Expõe a porta padrão
+# Porta padrão HTTP
 EXPOSE 80
 
 # Inicia o NGINX
