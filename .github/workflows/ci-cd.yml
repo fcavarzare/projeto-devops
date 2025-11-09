@@ -36,19 +36,23 @@ jobs:
     needs: docker_build_push
 
     steps:
-      - name: Adicionar chave privada SSH
+      - name: Criar chave privada SSH
         run: |
           echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > private_key.pem
           chmod 600 private_key.pem
 
       - name: Conectar na VM e atualizar container
+        env:
+          VM_IP: ${{ secrets.VM_PUBLIC_IP }}
+          ADMIN_USER: ${{ secrets.ADMIN_USERNAME }}
+          DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
         run: |
-          ssh -i private_key.pem -o StrictHostKeyChecking=no ${{ secrets.ADMIN_USERNAME }}@${{ secrets.VM_PUBLIC_IP }} << 'EOF'
-            sudo docker pull ${{ secrets.DOCKER_IMAGE }}
-            sudo docker rm -f webapp || true
-            sudo docker run -d -p 80:80 --name webapp ${{ secrets.DOCKER_IMAGE }}
+          ssh -i private_key.pem -o StrictHostKeyChecking=no $ADMIN_USER@$VM_IP "
+            sudo docker pull $DOCKER_IMAGE &&
+            sudo docker rm -f webapp || true &&
+            sudo docker run -d -p 80:80 --name webapp $DOCKER_IMAGE &&
             sudo docker ps
-          EOF
+          "
 
       - name: Mostrar URL de acesso
         run: echo "✅ Aplicação disponível em: http://${{ secrets.VM_PUBLIC_IP }}"
