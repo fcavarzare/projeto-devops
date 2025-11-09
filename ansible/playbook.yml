@@ -71,3 +71,19 @@
     - debug:
         var: docker_ver.stdout
 
+              - name: Baixar imagem da aplicação no Docker Hub
+      shell: docker pull {{ docker_image }}
+
+    - name: Remover container antigo se existir
+      shell: docker rm -f webapp || true
+
+    - name: Subir novo container com a aplicação
+      shell: docker run -d -p 80:80 --name webapp {{ docker_image }}
+
+    - name: Mostrar containers em execução
+      shell: docker ps
+      register: docker_status
+
+    - debug:
+        var: docker_status.stdout
+
