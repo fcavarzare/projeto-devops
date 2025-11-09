@@ -72,28 +72,5 @@ jobs:
       - name: Instalar Ansible
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y ansible
-
-      # 👇 Passa o IP do Terraform para os próximos steps
-      - name: Definir variável PUBLIC_IP
-        run: echo "PUBLIC_IP=${{ needs.terraform.outputs.public_ip }}" >> $GITHUB_ENV
-
-      - name: Configurar SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          echo "📡 IP público detectado: $PUBLIC_IP"
-          ssh-keyscan -H $PUBLIC_IP >> ~/.ssh/known_hosts 2>/dev/null
-
-            - name: Rodar playbook Ansible (instalar Docker e rodar container)
-        run: |
-          ansible-playbook -i "$PUBLIC_IP," ansible/install_docker.yml \
-            -u ${{ secrets.ADMIN_USERNAME }} \
-            --private-key ~/.ssh/id_rsa \
-            -e DOCKER_IMAGE='${{ secrets.DOCKER_IMAGE }}' \
-            -e DOCKERHUB_USERNAME='${{ secrets.DOCKERHUB_USERNAME }}' \
-            -e DOCKERHUB_TOKEN='${{ secrets.DOCKERHUB_TOKEN }}' \
-            -e ansible_python_interpreter=/usr/bin/python3
-
+          sudo apt-get inst
 
