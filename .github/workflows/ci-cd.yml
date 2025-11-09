@@ -47,10 +47,10 @@ jobs:
           ADMIN_USER: ${{ secrets.ADMIN_USERNAME }}
           DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
         run: |
-          ssh -i private_key.pem -o StrictHostKeyChecking=no $ADMIN_USER@$VM_IP "
-            sudo docker pull $DOCKER_IMAGE &&
-            sudo docker rm -f webapp || true &&
-            sudo docker run -d -p 80:80 --name webapp $DOCKER_IMAGE &&
+          ssh -o StrictHostKeyChecking=no -i private_key.pem $ADMIN_USER@$VM_IP "
+            sudo docker pull $DOCKER_IMAGE && \
+            sudo docker rm -f webapp || true && \
+            sudo docker run -d -p 80:80 --name webapp $DOCKER_IMAGE && \
             sudo docker ps
           "
 
