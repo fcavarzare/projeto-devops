@@ -1,10 +1,10 @@
-FROM nginx:alpine
+FROM nginx
 
 WORKDIR /usr/share/nginx/html
 
 RUN rm -rf ./*
 
-COPY site/ .
+COPY /site/ .
 
 RUN chmod -R 755 /usr/share/nginx/html
 
