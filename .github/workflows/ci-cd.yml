@@ -13,7 +13,7 @@ jobs:
     env:
       PUBLIC_IP: ${{ secrets.VM_PUBLIC_IP }}
       ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
-      DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }} # Exemplo: seuusuario/meuapp
+      DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
@@ -27,7 +27,7 @@ jobs:
 
       - name: 🏗️ Build da imagem Docker
         run: |
-          docker build -t $DOCKER_IMAGE:latest .
+          docker build -t $DOCKER_IMAGE:latest -f app/Dockerfile app/
 
       - name: 🚀 Push da imagem para o Docker Hub
         run: |
