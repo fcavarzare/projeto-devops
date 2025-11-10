@@ -1,4 +1,4 @@
-name: Instalar Ansible e subir container via SSH
+name: Build, Push e Deploy Docker via SSH
 
 on:
   push:
@@ -7,21 +7,33 @@ on:
 
 jobs:
   deploy:
-    name: Instalar Ansible + Docker Run na VM
+    name: Buildar imagem, enviar pro Docker Hub e subir na VM
     runs-on: ubuntu-latest
 
     env:
       PUBLIC_IP: ${{ secrets.VM_PUBLIC_IP }}
       ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
-      DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }}
+      DOCKER_IMAGE: ${{ secrets.DOCKER_IMAGE }} # Exemplo: seuusuario/meuapp
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
     steps:
-      - name: Checkout repository
+      - name: 📦 Checkout do repositório
         uses: actions/checkout@v4
 
-      - name: Configurar SSH
+      - name: 🐋 Login no Docker Hub
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: 🏗️ Build da imagem Docker
+        run: |
+          docker build -t $DOCKER_IMAGE:latest .
+
+      - name: 🚀 Push da imagem para o Docker Hub
+        run: |
+          docker push $DOCKER_IMAGE:latest
+
+      - name: 🔑 Configurar SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
@@ -29,26 +41,26 @@ jobs:
           ssh-keyscan -H $PUBLIC_IP >> ~/.ssh/known_hosts 2>/dev/null
           echo "✅ Conexão SSH configurada para $PUBLIC_IP"
 
-      - name: Instalar Ansible e rodar container na VM
+      - name: 📦 Instalar Ansible e subir container atualizado na VM
         run: |
-          ssh -o StrictHostKeyChecking=no $ADMIN_USERNAME@$PUBLIC_IP << 'EOF'
+          ssh -o StrictHostKeyChecking=no $ADMIN_USERNAME@$PUBLIC_IP << "EOF"
           set -e
 
-          echo "🚀 Atualizando pacotes e instalando Ansible..."
+          echo "🚀 Atualizando pacotes e instalando Ansible e Docker..."
           sudo apt-get update -y
           sudo apt-get install -y ansible docker.io
 
-          echo "🐋 Fazendo login no Docker Hub..."
+          echo "🐋 Login no Docker Hub..."
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
-          echo "⬇️ Puxando imagem do Docker Hub..."
+          echo "⬇️ Baixando imagem mais recente..."
           sudo docker pull "${{ secrets.DOCKER_IMAGE }}:latest"
 
-          echo "🧹 Parando container antigo (se existir)..."
+          echo "🧹 Parando container antigo..."
           sudo docker stop meuapp-nginx || true
           sudo docker rm meuapp-nginx || true
 
-          echo "🚀 Subindo container atualizado..."
+          echo "🚀 Subindo novo container..."
           sudo docker run -d --name meuapp-nginx \
             -p 80:80 --restart=always "${{ secrets.DOCKER_IMAGE }}:latest"
 
